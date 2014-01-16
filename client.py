@@ -1,46 +1,14 @@
-from os.path import abspath
 from sys import exit
-from json import loads, dumps
-import socket
 from argparse import ArgumentParser
 import signal
 
+from rich_unix_domain_sockets import RichUnixDomainSocket
+
 UDS_PATH = "dms.uds"
 
-class RichUnixClientSocket:
-    def __init__(self, sock = None):
-        if sock:
-            self.sock = sock
-        else:
-            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-
-    def send_dict(self, dictionary):
-        payload = json.dumps(dictionary)
-        self.sock.send(payload)
-
-    def receive_dict(self):
-        try:
-            payload = self.sock.recv(MAX_MSG_LEN)
-            dictionary = json.loads(payload)
-        except socket.error as se:
-            if se.errno == errno.EINTR:
-                return False, errno.EINTR
-            print "Error: Could not receive message from server: " + se[0] +" : ErrorNo: " + str(se[1]) 
-            exit()   
-        except ValueError:
-            print 'Error: Malformed message received. Payload size : ', str(len(payload))
-            exit()
-        return True, dictionary
-
-    def connect(self, path):
-        try:
-            self.sock.connect(path)
-        except socket.error as se:
-            print "Error: Could not connect to socket at " + abspath(path)
-            exit()
-       
-    def close(self):
-        self.sock.close()
+def fatal(msg):
+    print msg
+    exit()
 
 def parse_arguments():
     parser = ArgumentParser()
@@ -52,12 +20,12 @@ def parse_arguments():
 
 def send_request(rucs, request):
     request_dict = {} 
+    request_dict['message_type'] = 'request'
     request_dict['URL'] = request.url
     request_dict['target'] = request.target
     request_dict['insist'] = request.insist
-    rucs.send_dict(request_dict)
-    return 
-
+    return rucs.send_dict(request_dict)
+    
 def set_signal_flag(sig):
     if sig == signal.SIGINT:
         sigint = True
@@ -75,12 +43,37 @@ def setup_signal_recording():
     signal.signal(signal.SIGTERM, set_signal_flag)
     return
 
+def send_signal_notice(sock):
+    request_dict = {}
+    request_dict['message_type'] = 'signal_notice'
+    request_dict['SIGINT'] = sigint
+    request_dict['SIGTERM'] = sigterm
+    return rucs.send_dict(request_dict)
+
+def process_message(message):
+    pass
 
 setup_signal_recording()
 request = parse_arguments()
-rucs = RichUnixClientSocket()
-rucs.connect(UDS_PATH)
-send_request(rucs, request)
+rucs = RichUnixDomainSocket()
+
+ret, desc = rucs.init()
+fatal(desc) if ret
+
+ret, desc = rucs.connect(UDS_PATH)
+fatal(desc) if ret
+
+ret, desc = send_request(rucs, request)
+fatal(desc) if ret
 
 done = False
+while not done:
+    code, retval = rucs.recieve_dict()
+    if code == 1:
+        ret, desc = send_signal_notice(rucs)
+        fatal(desc) if ret
+    elif code == 2:
+        print "Warning: " + retval
+    else:
+        process_message(retval)
 
