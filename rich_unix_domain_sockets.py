@@ -1,12 +1,14 @@
 import socket
+from errno import EINTR
 from json import loads, dumps
 from os.path import abspath
+
+MAX_MSG_LEN = 2048
 
 class RichUnixDomainSocket:
     # returns (0, None) on success
     # returns (-1, errdesc) on failure
-    def init(self, sock = None, listen_queue = 5)
-        self.listen_queue = listen_queue
+    def init(self, sock = None):
         if sock:
             self.sock = sock
         else:
@@ -36,10 +38,10 @@ class RichUnixDomainSocket:
             dictionary = loads(payload)
             return (0, dictionary)
         except socket.error as se:
-            return (1, None) if se.errno == errno.EINTR
+            if se.errno == EINTR: return (1, "Received signal") 
             return (-1, se[1])
         except ValueError:
-            return (2, 'Malformed message received. Payload size : ', str(len(payload)))
+            return (2, 'Invalid message. Payload size : ' + str(len(payload)))
 
     # returns (0, None) on success
     # returns (-1, errdesc) on errors
@@ -48,14 +50,14 @@ class RichUnixDomainSocket:
             self.sock.connect(path)
             return (0, None)
         except socket.error as se:
-            return (-1, se[0] + "path : " + abspath(path))
+            return (-1, "path: " + abspath(path) + " " + se[1] )
 
     # returns (0, None) on success
     # returns (-1, errdesc) on errors
-    def setup(self, path):
+    def bind(self, path):
         try:
             self.sock.bind(path)
-            self.sock.listen(self.listen_queue)
+            return (0, None)
         except socket.error as se:
             return (-1, se[1])
 
