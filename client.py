@@ -1,10 +1,20 @@
+from os import remove as rm
 from argparse import ArgumentParser
+from random import sample
+from string import lowercase
 import signal
-import errno
 
 from rich_unix_domain_sockets import RichUnixDomainSocket
 import common
 from common import fatal
+
+def cleanup():
+    rucs.close()
+    rm(addr)
+
+def die(message):
+    cleanup()
+    fatal(message)
 
 def parse_arguments():
     parser = ArgumentParser()
@@ -29,8 +39,12 @@ def send_signal_notice(sock):
     request_dict['SIGTERM'] = common.sigterm
     return rucs.send_dict(request_dict)
 
-def process_message(message):
-    pass
+def process_message(addr, msgdict):
+    if msgdict['message_type'] == 'response' and msgdict['response'] == True:
+        return (0, "Finished")
+    print "from:", addr
+    print "message:", msgdict
+    return (-1, "Failure")
 
 common.setup_signal_recording()
 request = parse_arguments()
@@ -39,22 +53,27 @@ rucs = RichUnixDomainSocket()
 ret, desc = rucs.init()
 if ret: fatal(desc) 
 
+addr = ''.join(sample(lowercase, 10))
+ret, desc = rucs.bind(addr)
+if ret: die(desc)
+
 ret, desc = rucs.connect(common.DMS_UDS_PATH)
-if ret: fatal(desc)
+if ret: die(desc)
 
 ret, desc = send_request(rucs, request)
-if ret: fatal(desc)
+if ret: die(desc)
 
 done = False
 while not done:
-    code, retval = rucs.receive_dict()
+    code, val = rucs.receive_dict()
     if code == 1:
         ret, desc = send_signal_notice(rucs)
-        if ret: fatal(desc)
-        rucs.close()
-        fatal("Received signal, exiting...")
+        if ret: die(desc)
+        die("Received signal, exiting...")
     elif code == 2:
-        print "Warning: " + retval
+        print "Warning: " + val
     else:
-        process_message(retval)
-
+        ret, desc = process_message(val[0], val[1])
+        if not ret:
+            done = True
+cleanup()
