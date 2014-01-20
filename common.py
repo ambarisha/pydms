@@ -1,4 +1,4 @@
-from sys import exit
+from sys import stderr
 import signal
 
 DMS_UDS_PATH = "dms.uds"
@@ -29,3 +29,5 @@ def fatal(msg):
     print msg
     exit()
 
+def log(msg):
+    stderr.write(msg + '\n')

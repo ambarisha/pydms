@@ -8,6 +8,7 @@ class MessageType:
     PROFILE_SUMMARY = 6
     UPDATE_PROFILE = 7
     RESIGNATION = 8
+    DIE = 9
 
 class Message:
     def __init__(self, msgtype):

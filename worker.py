@@ -6,11 +6,15 @@ from os import remove as rm
 class Worker:
     max_wait_timeout = 5
 
-    def __init__(self, id ):
+    def __init__(self, employer, postman, profile_manager):
         self.queue = Queue.queue()
+        self._employer = employer
+        self._postman = postman
+        self._profile_manager = profile_manager
 
     def _download(self, url, target):
         try:
+            # Todo: Assert the domain is self._site
             r = self._session.get(url, stream = True, allow_redirects = True)
             if r.status_code != 200: 
                 return (1, r.status_code)
@@ -35,21 +39,21 @@ class Worker:
 
     def _finish(self, status, speed, filesize):
         update = Message(MessageType.UPDATE_PROFILE)
-        update.file_size = filesize
+        update.filesize = filesize
         update.speed = speed 
         update.site = self._site
-        profile_manager.queue.post(update)
+        self._profile_manager.post(update)
 
         report = Message(MessageType.JOB_REPORT)
         report.status = status 
         report.sender = id(self)
-        employer.queue.post(report)
+        self._employer.post(report)
 
         response_mail = Message(MessageType.SEND_MAIL)
         response_mail.msgdict = {'message_type' : 'response',
                                  'response' : True if status == 1 else False}
         response_mail.addr = msg.remote_addr
-        postman.queue.post(response_mail)
+        self._postman.post(response_mail)
         return
 
 
@@ -66,13 +70,14 @@ class Worker:
                 if ret != 0 and ret != 3: die(val)
                 _finish(ret, 3000000, 1000000) # Todo: Temporary
             elif msg.type == MessageType.SIGNAL:
-                pass
-                # Todo: Log that an out of place signal message was received
+                log("Signal notice received out of context from " + msg.client)
+            elif msg.type == MessageType.DIE:
+                log("Received request to die. Dying.")
+                break
             else:
-                # Todo: Log that an invalid message was received
-                pass
+                log("Invalid message received")
 
         resignation = Message(MessageType.RESIGNATION)
         resignation.sender = id(self)
-        employer.queue.post(resignation)
+        self._employer.post(resignation)
 
