@@ -6,8 +6,9 @@ from os import remove as rm
 class Worker:
     max_wait_timeout = 5
 
-    def __init__(self, employer, postman, profile_manager):
+    def __init__(self, site, employer, postman, profile_manager):
         self.queue = Queue.queue()
+        self._site = site
         self._employer = employer
         self._postman = postman
         self._profile_manager = profile_manager
