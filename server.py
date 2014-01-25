@@ -1,9 +1,17 @@
 #!/usr/bin/python
 
+import urlparse
+
 from rich_unix_domain_sockets import RichUnixDomainSocket
-import common
 import requests
 from os import remove as rm
+from thread import start_new_thread
+import Queue
+
+from profile_manager import ProfileManager
+from job_manager import JobManager
+import common
+import message
 
 def cleanup():
     ruds.close()
@@ -22,6 +30,10 @@ def process_request(addr, msgdict, ruds):
         target = msgdict['target']
         insist = msgdict['insist']
 
+        x = urlparse.urlparse(url)
+        if x.scheme == '':
+            url = "http://" + url
+
         r = requests.get(url, stream=True)
         f = open(target, 'w')
         for chunk in r.iter_content(8192):
@@ -31,7 +43,7 @@ def process_request(addr, msgdict, ruds):
     except KeyError as ke:
         return (1, ke[0])
     except IOError as ioe:
-        return (2, target)
+        return (2, str(ioe) + target)
 
 def process_signal_notice(msgdict):
     print msgdict
@@ -56,6 +68,14 @@ def handle_message(addr, msgdict, ruds):
 
 
 common.setup_signal_recording()
+postman = Queue.Queue()
+
+profile_manager = ProfileManager()
+start_new_thread(profile_manager.run, ())
+
+job_manager = JobManager(postman, profile_manager.queue)
+start_new_thread(job_manager.run, ())
+
 ruds = RichUnixDomainSocket()
 ret, val = ruds.init()
 if ret: die("ruds.init() : " + val)
