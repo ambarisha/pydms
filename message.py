@@ -4,11 +4,10 @@ class MessageType:
     JOB_REPORT = 2
     NEW_MAIL = 3
     SEND_MAIL = 4
-    PROFILE_SUMMARY_REQUEST = 5
-    PROFILE_SUMMARY = 6
-    UPDATE_PROFILE = 7
-    RESIGNATION = 8
-    DIE = 9
+    PROFILE_SUMMARY = 5
+    UPDATE_PROFILE = 6
+    RESIGNATION = 7
+    DIE = 8
 
 class Message:
     def __init__(self, msgtype):

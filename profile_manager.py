@@ -55,16 +55,14 @@ class ProfileManager:
         return summary
 
     def run(self):
-        done = False
-        while not done:
+        while True:
             msg = self.queue.get()
-            if msg.type == MessageType.PROFILE_SUMMARY_REQUEST:
+            if msg.type == MessageType.PROFILE_UPDATE:
+                _update(msg.site, msg.speed, msg.filesize)
                 summary = _summarize()
                 summary_response = Message(MessageType.PROFILE_SUMMARY)
                 summary_response.summary = summary
                 self._job_manager.post(summary_response)
-            elif msg.type == MessageType.PROFILE_UPDATE:
-                _update(msg.site, msg.speed, msg.filesize)
             elif msg.type == MessageType.DIE:
                 break
             else:
