@@ -8,7 +8,6 @@ from os import remove as rm
 from thread import start_new_thread
 import Queue
 
-from profile_manager import ProfileManager
 from job_manager import JobManager
 import common
 from message import *
@@ -90,11 +89,8 @@ def handle_message(addr, msgdict, ruds):
 common.setup_signal_recording()
 postman = Queue.Queue()
 
-profile_manager = ProfileManager()
-job_manager = JobManager(postman, profile_manager.queue)
-
+job_manager = JobManager(postman)
 start_new_thread(job_manager.run, ())
-start_new_thread(profile_manager.run, (job_manager.queue,))
 
 ruds = RichUnixDomainSocket()
 ret, val = ruds.init()

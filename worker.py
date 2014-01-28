@@ -8,12 +8,11 @@ from message import Message, MessageType
 class Worker:
     max_wait_timeout = 5
 
-    def __init__(self, site, employer, postman, profile_manager):
+    def __init__(self, site, employer, postman):
         self.queue = Queue.Queue()
         self._site = site
         self._employer = employer
         self._postman = postman
-        self._profile_manager = profile_manager
         self._session = requests.Session()
         self._site = site
 
@@ -38,22 +37,19 @@ class Worker:
         except IOError as ioe:
             return (2, target + ": " + str(ioe))
 
-    def _finish(self, status, speed, filesize):
-        update = Message(MessageType.UPDATE_PROFILE)
-        update.filesize = filesize
-        update.speed = speed 
-        update.site = self._site
-        self._profile_manager.put(update)
-
+    def _finish(self, status, speed, filesize, remote):
         report = Message(MessageType.JOB_REPORT)
         report.status = status 
         report.sender = id(self)
+        report.filesize = filesize
+        report.speed = speed
+        report.site = self._site
         self._employer.put(report)
 
         response_mail = Message(MessageType.SEND_MAIL)
         response_mail.msgdict = {'message_type' : 'response',
                                  'response' : True if status == 1 else False}
-        response_mail.addr = msg.remote_addr
+        response_mail.addr = remote
         self._postman.put(response_mail)
         return
 
@@ -68,7 +64,7 @@ class Worker:
             if msg.type == MessageType.NEW_JOB:
                 ret, val = self._download(msg.url, msg.target)
                 if ret != 0 and ret != 3: fatal(val)
-                _finish(ret, 3000000, 1000000) # Todo: Temporary
+                _finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
             elif msg.type == MessageType.SIGNAL:
                 log("Signal notice received out of context from " + msg.client)
             elif msg.type == MessageType.DIE:
@@ -80,4 +76,3 @@ class Worker:
         resignation = Message(MessageType.RESIGNATION)
         resignation.sender = id(self)
         self._employer.put(resignation)
-
