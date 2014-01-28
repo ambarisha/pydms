@@ -2,6 +2,7 @@ import socket
 from errno import EINTR
 from json import loads, dumps
 from os.path import abspath
+from select import select
 
 MAX_MSG_LEN = 2048
 
@@ -66,3 +67,10 @@ class RichUnixDomainSocket:
 
     def close(self):
         self._sock.close()
+
+    def wait(self, timeout):
+        rready, wready, xready = select([self._sock], [], [], timeout)
+        if self._sock in rready:
+            return True
+        return False
+        

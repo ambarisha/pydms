@@ -84,12 +84,15 @@ def handle_message(addr, msgdict, ruds):
     except KeyError as ke:
         return (1, ke[0])
 
+def post_message(message, ruds):
+    ret, val = ruds.send_dict(message.msgdict, message.addr)
+    if ret: die("Couldn't send message. " + val)
 
 
 common.setup_signal_recording()
-postman = Queue.Queue()
+postbox = Queue.Queue()
 
-job_manager = JobManager(postman)
+job_manager = JobManager(postbox)
 start_new_thread(job_manager.run, ())
 
 ruds = RichUnixDomainSocket()
@@ -101,6 +104,11 @@ if ret: die("ruds.bind() : " + val)
 
 done = False
 while not done:
+    have_mail = ruds.wait(0.001)
+    while not postbox.empty():
+        post_message(postbox.get(), ruds)
+    if not have_mail:
+        continue
     ret, val = ruds.receive_dict()
     if ret: die("ruds.receive_dict() : " + val)
     ret, val = handle_message(val[0], val[1], ruds)
