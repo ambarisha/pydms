@@ -83,9 +83,12 @@ class JobManager:
                 return -1
             elif a[1] < b[1]:
                 return 1
+
         self._preferences.sort(cmp = compare)
 
     def _update(self, site, speed, filesize):
+        if not site in self._record:
+            return
         self._record[site].append((datetime.now(), speed))     
         self._summarize()
 
@@ -96,7 +99,7 @@ class JobManager:
         return self._preferences[0][0]
 
     def _hire(self, site):
-        worker = Worker(self.queue, self.queue, self._postman) 
+        worker = Worker(site, self.queue, self._postman) 
         start_new_thread(worker.run, ())
         self._workers[site] = worker
         self._worker_status[worker] = False
@@ -112,10 +115,10 @@ class JobManager:
                         break
             if job == None:
                 return
-
         message = Message(MessageType.NEW_JOB)
         message.url = job.url
         message.target = job.target
+        message.client = job.addr
         worker.queue.put(message)
 
         self._assignments[worker] = job
@@ -127,12 +130,13 @@ class JobManager:
     def _signoff(self, worker, status):
         # Todo: Probably its better to log the status
         job = self._assignments[worker]
-        self._assignments.remove(worker)
-        self._assignments.remove(job)
+        self._assignments.pop(worker)
+        self._assignments.pop(job)
         self._worker_status[worker] = False
         self._jobs.remove(job)
    
     def _dispatch(self, job):
+        self._jobs.append(job)
         if not job.insist:
             site = self._pick_site()
             job.update_url(site)
@@ -140,8 +144,14 @@ class JobManager:
             if self._workers[job.site] == False:
                 self._assign(self._workers[job.site], job)
         else:
-            worker = self._hire(site)
+            worker = self._hire(job.site)
             self._assign(worker, job)
+
+    def _accept_resignation(self, worker):
+        self._worker_status.pop(worker)
+        self._workers.pop(worker._site)
+        # Todo: Bad. Bad. Accessing private element
+        # Todo: Assert worker is not in self._assignments
 
     def run(self):
         done = False
@@ -159,6 +169,8 @@ class JobManager:
                 for worker in self._workers:
                     worker.queue.put(Message(msg))
                 done = True
+            elif msg.type == MessageType.RESIGNATION:
+                self._accept_resignation(msg.sender)
             else:
                 log("JobManager: Invalid message received [Type: " + str(msg.type) + "]")
         self._save(self._filename)

@@ -14,7 +14,6 @@ class Worker:
         self._employer = employer
         self._postman = postman
         self._session = requests.Session()
-        self._site = site
 
     def _download(self, url, target):
         try:
@@ -40,7 +39,7 @@ class Worker:
     def _finish(self, status, speed, filesize, remote):
         report = Message(MessageType.JOB_REPORT)
         report.status = status 
-        report.sender = id(self)
+        report.sender = self
         report.filesize = filesize
         report.speed = speed
         report.site = self._site
@@ -48,11 +47,9 @@ class Worker:
 
         response_mail = Message(MessageType.SEND_MAIL)
         response_mail.msgdict = {'message_type' : 'response',
-                                 'response' : True if status == 1 else False}
+                                 'response' : True if status == 0 else False}
         response_mail.addr = remote
         self._postman.put(response_mail)
-        return
-
 
     def run(self):
         while True:
@@ -64,7 +61,7 @@ class Worker:
             if msg.type == MessageType.NEW_JOB:
                 ret, val = self._download(msg.url, msg.target)
                 if ret != 0 and ret != 3: fatal(val)
-                _finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
+                self._finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
             elif msg.type == MessageType.SIGNAL:
                 log("Signal notice received out of context from " + msg.client)
             elif msg.type == MessageType.DIE:
@@ -74,5 +71,5 @@ class Worker:
                 log("Invalid message received")
 
         resignation = Message(MessageType.RESIGNATION)
-        resignation.sender = id(self)
+        resignation.sender = self
         self._employer.put(resignation)
