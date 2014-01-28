@@ -1,9 +1,10 @@
 
 import Queue
 from thread import start_new_thread
+from urlparse import urlparse, ParseResult
 
-import worker
-import message
+from worker import Worker
+from message import Message, MessageType
 
 class Job:
     def __init__(self, addr, url, target, insist = False):
@@ -25,6 +26,7 @@ class JobManager:
     def __init__(self, postman, profile_manager):
         self.queue = Queue.Queue()
         self._postman = postman
+        self._profile_manager = profile_manager
         self._jobs = []
         self._workers = {}
         self._worker_status = {}
@@ -52,8 +54,8 @@ class JobManager:
 
         message = Message(MessageType.NEW_JOB)
         message.url = job.url
-        msg.target = job.target
-        worker.queue.post(msg)
+        message.target = job.target
+        worker.queue.put(message)
 
         self._assignments[worker] = job
         self._assignments[job] = worker
@@ -62,7 +64,7 @@ class JobManager:
         return
     
     def _hire(self, site):
-        worker = Worker(self.queue, postman, profile_manager) 
+        worker = Worker(self.queue, self.queue, self._postman, self._profile_manager) 
         start_new_thread(worker.run, ())
         self._workers[site] = worker
         self._worker_status[worker] = False
@@ -70,7 +72,7 @@ class JobManager:
 
     def _pick_site(self):
         for (site, profile) in self._profiles:
-            if self._worker_status[self._workers[site]] == False:
+            if site not in self._workers or self._worker_status[self._workers[site]] == False:
                 return site
         return self._profiles[0][0]
 
@@ -86,7 +88,14 @@ class JobManager:
             self._assign(worker, job)
 
     def _update_profiles(self, summary):
-        summary.sort()
+        def compare(a, b):
+            if a[1] == b[1]:
+                return 0
+            elif a[1] > b[1]:
+                return -1
+            elif a[1] < b[1]:
+                return 1
+        summary.sort(cmp = compare)
         self._profiles = summary
         # Todo: What if the new summary excludes some of the old entries??
 
@@ -102,10 +111,10 @@ class JobManager:
                 self._signoff(msg.sender, msg.status)
                 self._assign(msg.sender)
             elif msg.type == MessageType.SIGNAL:
-                self._workers[msg.addr].queue.post(msg)
+                self._workers[msg.addr].queue.put(msg)
             elif msg.type == MessageType.DIE:
                 for worker in self._workers:
-                    worker.queue.post(Message(msg))
+                    worker.queue.put(Message(msg))
                 done = True
             else:
                 log("JobManager: Invalid message received [Type: " + str(msg.type) + "]")

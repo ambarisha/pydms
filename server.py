@@ -11,7 +11,7 @@ import Queue
 from profile_manager import ProfileManager
 from job_manager import JobManager
 import common
-import message
+from message import *
 
 def cleanup():
     ruds.close()
@@ -45,6 +45,25 @@ def process_request(addr, msgdict, ruds):
     except IOError as ioe:
         return (2, str(ioe) + target)
 
+def dispatch_request(addr, msgdict):
+    try:
+        message = Message(MessageType.REQUEST)
+        message.addr = addr
+        message.url = msgdict['URL']
+        message.target = msgdict['target']
+        message.insist = msgdict['insist']
+
+        x = urlparse.urlparse(message.url)
+        if x.scheme == '':
+            message.url = "http://" + message.url
+
+        job_manager.queue.put(message)
+        return (0, None)
+    except KeyError as ke:
+        return (1, ke[0])
+    except IOError as ioe:
+        return (2, str(ioe) + target)
+
 def process_signal_notice(msgdict):
     print msgdict
     return (0, "process_signal_notice(): not implemented yet")
@@ -57,7 +76,8 @@ def handle_message(addr, msgdict, ruds):
     try:
         msgtype = msgdict['message_type']
         if msgtype == 'request':
-            return process_request(addr, msgdict, ruds)
+            #return process_request(addr, msgdict, ruds)
+            return dispatch_request(addr, msgdict)
         elif msgtype == 'signal_notice':
             return process_signal_notice(msgdict)
         else:
@@ -71,10 +91,10 @@ common.setup_signal_recording()
 postman = Queue.Queue()
 
 profile_manager = ProfileManager()
-start_new_thread(profile_manager.run, ())
-
 job_manager = JobManager(postman, profile_manager.queue)
+
 start_new_thread(job_manager.run, ())
+start_new_thread(profile_manager.run, (job_manager.queue,))
 
 ruds = RichUnixDomainSocket()
 ret, val = ruds.init()

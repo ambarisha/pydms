@@ -1,9 +1,9 @@
 import Queue
 from datetime import datetime, timedelta
-from common import log, fatal
 from json import load, dump
 
-import message
+from message import Message, MessageType
+from common import log, fatal
 
 def datetime_encode(obj):
     if isinstance(obj, datetime):
@@ -26,7 +26,7 @@ class ProfileManager:
         self._filename = filename
         ret, val = self._load(self._filename)
         if ret: fatal("Could not load profiles file: " + self._filename)
-    
+
     def _load(self, filename):
         try:
             f = open(filename, 'r')
@@ -48,21 +48,26 @@ class ProfileManager:
         self._record[site].append((datetime.now(), speed))     
 
     def _summarize(self):
-        summary = {}
+        summary = []
         for site in self._record:
-            summary[site] = [x[1] for x in self._record[site] if x[0] - datetime.now() < self._recent]
-            summary[site] = sum(summary[site], 0.0) / len(summary[site])
+            readings = [x[1] for x in self._record[site] if x[0] - datetime.now() < self._recent]
+            summary.append((site, sum(readings, 0.0) / len(readings)))
         return summary
 
-    def run(self):
+    def run(self, job_manager):
+        summary = self._summarize()
+        summary_response = Message(MessageType.PROFILE_SUMMARY)
+        summary_response.summary = summary
+        job_manager.put(summary_response)
+    
         while True:
             msg = self.queue.get()
             if msg.type == MessageType.PROFILE_UPDATE:
                 _update(msg.site, msg.speed, msg.filesize)
-                summary = _summarize()
+                summary = self._summarize()
                 summary_response = Message(MessageType.PROFILE_SUMMARY)
                 summary_response.summary = summary
-                self._job_manager.post(summary_response)
+                job_manager.put(summary_response)
             elif msg.type == MessageType.DIE:
                 break
             else:
