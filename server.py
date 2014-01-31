@@ -7,6 +7,7 @@ import requests
 from os import remove as rm
 from thread import start_new_thread
 import Queue
+from time import sleep
 
 from job_manager import JobManager
 import common
@@ -15,6 +16,10 @@ from message import *
 def cleanup():
     ruds.close()
     rm(common.DMS_UDS_PATH)
+    message = Message(MessageType.DIE)
+    job_manager.queue.put(message)
+    sleep(3)
+    #Todo: Join job_manager.queue
 
 def die(message):
     cleanup()
@@ -104,11 +109,15 @@ if ret: die("ruds.bind() : " + val)
 
 done = False
 while not done:
-    have_mail = ruds.wait(0.001)
+    error, val = ruds.wait(0.001)
+    if error: die(val)
+
     while not postbox.empty():
         post_message(postbox.get(), ruds)
-    if not have_mail:
+
+    if not val:
         continue
+
     ret, val = ruds.receive_dict()
     if ret: die("ruds.receive_dict() : " + val)
     ret, val = handle_message(val[0], val[1], ruds)

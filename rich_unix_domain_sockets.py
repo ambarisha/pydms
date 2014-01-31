@@ -2,7 +2,8 @@ import socket
 from errno import EINTR
 from json import loads, dumps
 from os.path import abspath
-from select import select
+from select import select, error as select_error
+
 
 MAX_MSG_LEN = 2048
 
@@ -68,9 +69,13 @@ class RichUnixDomainSocket:
     def close(self):
         self._sock.close()
 
+    # returns (0, have_mail) on success
+    # returns (-1, errdesc) on errors
     def wait(self, timeout):
-        rready, wready, xready = select([self._sock], [], [], timeout)
-        if self._sock in rready:
-            return True
-        return False
-        
+        try:
+            rready, wready, xready = select([self._sock], [], [], timeout)
+            if self._sock in rready:
+                return (0, True)
+            return (0, False)
+        except select_error as se:
+            return (-1, "Signal recieved. Exiting.")

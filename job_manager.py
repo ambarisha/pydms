@@ -167,8 +167,9 @@ class JobManager:
                 self._workers[msg.addr].queue.put(msg)
             elif msg.type == MessageType.DIE:
                 for worker in self._workers:
-                    worker.queue.put(Message(msg))
+                    self._workers[worker].queue.put(Message(msg.type))
                 done = True
+                log("JobManager: Recieved death warrant. Turning in.")
             elif msg.type == MessageType.RESIGNATION:
                 self._accept_resignation(msg.sender)
             else:

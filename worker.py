@@ -20,21 +20,23 @@ class Worker:
             # Todo: Assert the domain is self._site
             r = self._session.get(url, stream = True, allow_redirects = True)
             if r.status_code != 200: 
-                return (1, r.status_code)
+                return (-1, r.status_code)
 
             f = open(target, 'w')
             for chunk in r.iter_content(16384):
                 f.write(chunk)
                 if not self.queue.empty():
                     msg = self.queue.get()
-                    # Todo: Assert its a signal notice
+                    # Todo: Assert its a signal notice or a death warrant
                     f.close()
                     rm(target)
-                    return (3, msg.signal)
+                    if msg.type == MessageType.DIE:
+                        return (3, "Death warrant received")
+                    return (2, msg.signal)
             f.close()
             return (0, None)
         except IOError as ioe:
-            return (2, target + ": " + str(ioe))
+            return (-2, target + ": " + str(ioe))
 
     def _finish(self, status, speed, filesize, remote):
         report = Message(MessageType.JOB_REPORT)
@@ -58,18 +60,22 @@ class Worker:
             except Queue.Empty as e:
                 break
 
-            if msg.type == MessageType.NEW_JOB:
-                ret, val = self._download(msg.url, msg.target)
-                if ret != 0 and ret != 3: fatal(val)
-                self._finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
-            elif msg.type == MessageType.SIGNAL:
-                log("Signal notice received out of context from " + msg.client)
-            elif msg.type == MessageType.DIE:
-                log("Received request to die. Dying.")
-                break
-            else:
-                log("Invalid message received")
-
+            try:
+                if msg.type == MessageType.NEW_JOB:
+                    ret, val = self._download(msg.url, msg.target)
+                    if ret < 0: fatal(val)
+                    self._finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
+                    if ret == 2: return
+                elif msg.type == MessageType.SIGNAL:
+                    log("Signal notice received out of context from " + msg.client)
+                elif msg.type == MessageType.DIE:
+                    log("Received request to die. Dying.")
+                    break
+                else:
+                    log("Invalid message received")
+            except Exception as e:
+                print e
+        
         resignation = Message(MessageType.RESIGNATION)
         resignation.sender = self
         self._employer.put(resignation)
