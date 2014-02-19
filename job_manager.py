@@ -4,6 +4,7 @@ from thread import start_new_thread
 from urlparse import urlparse, ParseResult
 from datetime import datetime, timedelta
 from json import load, dump
+from threading import Thread
 
 from common import log, fatal
 from worker import Worker
@@ -46,6 +47,7 @@ class JobManager:
         self._jobs = []
         self._workers = {}
         self._worker_status = {}
+        self._threads = {}
         self._assignments = {}
         self._preferences = []
         self._recent = recent
@@ -100,7 +102,8 @@ class JobManager:
 
     def _hire(self, site):
         worker = Worker(site, self.queue, self._postman) 
-        start_new_thread(worker.run, ())
+        self._threads[worker] = Thread(target = worker.run)
+        self._threads[worker].start()
         self._workers[site] = worker
         self._worker_status[worker] = False
         return worker
@@ -149,6 +152,7 @@ class JobManager:
 
     def _accept_resignation(self, worker):
         self._worker_status.pop(worker)
+        self._threads.pop(worker)
         self._workers.pop(worker._site)
         # Todo: Bad. Bad. Accessing private element
         # Todo: Assert worker is not in self._assignments
@@ -174,4 +178,6 @@ class JobManager:
                 self._accept_resignation(msg.sender)
             else:
                 log("JobManager: Invalid message received [Type: " + str(msg.type) + "]")
+        for worker in self._threads:
+            self._threads[worker].join()
         self._save(self._filename)

@@ -10,16 +10,20 @@ import Queue
 from time import sleep
 
 from job_manager import JobManager
+from threading import Thread
 import common
 from message import *
 
 def cleanup():
-    ruds.close()
-    rm(common.DMS_UDS_PATH)
     message = Message(MessageType.DIE)
     job_manager.queue.put(message)
-    sleep(3)
-    #Todo: Join job_manager.queue
+    jm_thread.join()
+
+    while not postbox.empty():
+        post_message(postbox.get(), ruds)
+
+    ruds.close()
+    rm(common.DMS_UDS_PATH)
 
 def die(message):
     cleanup()
@@ -60,9 +64,8 @@ def dispatch_request(addr, msgdict):
         x = urlparse.urlparse(message.url)
         if x.scheme == '':
             message.url = "http://" + message.url
-
         job_manager.queue.put(message)
-        return (0, None)
+        return ruds.send_dict({'message_type' : 'request_ack'}, addr)    
     except KeyError as ke:
         return (1, ke[0])
     except IOError as ioe:
@@ -98,7 +101,9 @@ common.setup_signal_recording()
 postbox = Queue.Queue()
 
 job_manager = JobManager(postbox)
-start_new_thread(job_manager.run, ())
+
+jm_thread = Thread(target = job_manager.run)
+jm_thread.start()
 
 ruds = RichUnixDomainSocket()
 ret, val = ruds.init()
@@ -118,8 +123,7 @@ while not done:
     if not val:
         continue
 
-    ret, val = ruds.receive_dict()
-    if ret: die("ruds.receive_dict() : " + val)
+    ret, val = ruds.recv_dict()
+    if ret: die("ruds.recv_dict() : " + val)
     ret, val = handle_message(val[0], val[1], ruds)
     if ret: die("handle_message() : " + val)
-cleanup()

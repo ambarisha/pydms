@@ -1,7 +1,7 @@
 import requests
 import Queue
 from os import remove as rm
-from common import fatal
+from common import fatal, log
 
 from message import Message, MessageType
 
@@ -51,6 +51,7 @@ class Worker:
         response_mail.msgdict = {'message_type' : 'response',
                                  'response' : True if status == 0 else False}
         response_mail.addr = remote
+        print "Response Mail: ", response_mail.msgdict, response_mail.addr
         self._postman.put(response_mail)
 
     def run(self):
@@ -65,12 +66,12 @@ class Worker:
                     ret, val = self._download(msg.url, msg.target)
                     if ret < 0: fatal(val)
                     self._finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
-                    if ret == 2: return
+                    if ret == 2 or ret == 3: return
                 elif msg.type == MessageType.SIGNAL:
                     log("Signal notice received out of context from " + msg.client)
                 elif msg.type == MessageType.DIE:
                     log("Received request to die. Dying.")
-                    break
+                    return
                 else:
                     log("Invalid message received")
             except Exception as e:

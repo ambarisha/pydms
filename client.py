@@ -30,8 +30,17 @@ def send_request(rucs, request):
     request_dict['URL'] = request.url
     request_dict['target'] = request.target
     request_dict['insist'] = request.insist
-    return rucs.send_dict(request_dict)
-    
+    err, desc = rucs.send_dict(request_dict)
+    if err: return err, desc
+
+    err, val = rucs.recv_dict(remote = common.DMS_UDS_PATH, timeout = 10)
+    if err: return err, val
+   
+    addr, msgdict = val
+    if msgdict['message_type'] != 'request_ack':
+        return -3, "Request not acknowledged"
+    return (0, None)
+
 def send_signal_notice(sock):
     request_dict = {}
     request_dict['message_type'] = 'signal_notice'
@@ -40,8 +49,11 @@ def send_signal_notice(sock):
     return rucs.send_dict(request_dict)
 
 def process_message(addr, msgdict):
-    if msgdict['message_type'] == 'response' and msgdict['response'] == True:
-        return (0, "Finished")
+    if msgdict['message_type'] == 'response':
+        if msgdict['response'] == True:
+            return (0, "Finished")
+        elif msgdict['response'] == False:
+            return (-2, "Request could not be processed")
     print "from:", addr
     print "message:", msgdict
     return (-1, "Failure")
@@ -65,7 +77,7 @@ if ret: die(desc)
 
 done = False
 while not done:
-    code, val = rucs.receive_dict()
+    code, val = rucs.recv_dict(remote = common.DMS_UDS_PATH)
     if code == 1:
         ret, desc = send_signal_notice(rucs)
         if ret: die(desc)
@@ -75,5 +87,8 @@ while not done:
     else:
         ret, desc = process_message(val[0], val[1])
         if not ret:
+            done = True
+        elif ret == -2:
+            print "Error: " + desc
             done = True
 cleanup()

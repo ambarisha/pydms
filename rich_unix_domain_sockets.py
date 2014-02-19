@@ -37,9 +37,18 @@ class RichUnixDomainSocket:
     # returns (1, None) on signal interruption
     # returns (2, errdesc) on invalid message
     # returns (-1, errdesc) on other errors
-    def receive_dict(self):
+    def recv_dict(self, remote = None, timeout = None):
         try:
-            payload, addr = self._sock.recvfrom(MAX_MSG_LEN)
+            if timeout:
+                self.wait(timeout)
+
+            done = False
+            while not done:
+                payload, addr = self._sock.recvfrom(MAX_MSG_LEN)
+                if remote and addr != remote:
+                    continue
+                done = True
+
             dictionary = loads(payload)
             return (0, (addr, dictionary))
         except socket.error as se:
@@ -71,9 +80,9 @@ class RichUnixDomainSocket:
 
     # returns (0, have_mail) on success
     # returns (-1, errdesc) on errors
-    def wait(self, timeout):
+    def wait(self, tosec):
         try:
-            rready, wready, xready = select([self._sock], [], [], timeout)
+            rready, wready, xready = select([self._sock], [], [], tosec)
             if self._sock in rready:
                 return (0, True)
             return (0, False)
