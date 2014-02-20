@@ -12,6 +12,7 @@ from time import sleep
 from job_manager import JobManager
 from threading import Thread
 import common
+from common import log
 from message import *
 
 def cleanup():
@@ -24,6 +25,7 @@ def cleanup():
 
     ruds.close()
     rm(common.DMS_UDS_PATH)
+    log("Server: Cleaned up")
 
 def die(message):
     cleanup()
@@ -61,6 +63,7 @@ def dispatch_request(addr, msgdict):
         message.url = msgdict['URL']
         message.target = msgdict['target']
         message.flags = { 'insist':msgdict['insist'], 'updates':msgdict['updates'] }
+        log("Server: New request: " + str(msgdict))
 
         x = urlparse.urlparse(message.url)
         if x.scheme == '':
@@ -95,7 +98,7 @@ def handle_message(addr, msgdict, ruds):
 def post_message(message, ruds):
     ret, val = ruds.send_dict(message.msgdict, message.addr)
     if ret: die("Couldn't send message. " + val)
-
+    log("Postman: To " + message.addr + "; " + str(message.msgdict))
 
 common.setup_signal_recording()
 postbox = Queue.Queue()
@@ -112,10 +115,9 @@ if ret: die("ruds.init() : " + val)
 ret, val = ruds.bind(common.DMS_UDS_PATH)
 if ret: die("ruds.bind() : " + val)
 
-done = False
 waiting = False
 tries = 1000
-while not done:
+while not common.sigint:
     error, val = ruds.wait(0.001)
     if error: die(val)
 
@@ -125,6 +127,7 @@ while not done:
             post_message(msg, ruds)
         elif msg.type == MessageType.FINISHED:
             waiting = True
+            log("Server: Job manager Idle")
 
     if not val:
         if waiting: 

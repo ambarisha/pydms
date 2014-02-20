@@ -1,4 +1,5 @@
 import requests
+from datetime import datetime
 import Queue
 from os import remove as rm
 from common import fatal, log
@@ -19,45 +20,58 @@ class Worker(object):
         self._postman = postman
         self._session = requests.Session()
 
-    def _send_update(self, curbytes, totbytes):
+    def _send_update(self, curbytes, totbytes, speed):
         message = Message(MessageType.UPDATE)
         message.msgdict = {}
         message.msgdict['message_type'] = 'update'
         message.msgdict['bytes_received'] = curbytes
         message.msgdict['total_bytes'] = totbytes 
+        message.msgdict['speed'] = speed
         message.addr = self._client
         self._postman.put(message)
+
+    def _get_content(self, r, f, send_updates, totbytes):
+            curbytes = 0
+            stdt = datetime.now()
+
+            for chunk in r.iter_content(16384):
+                enddt = datetime.now()
+                delta = (enddt - stdt).total_seconds()
+                curbytes += len(chunk)
+                speed = curbytes / delta
+
+                f.write(chunk)
+
+                if not self.queue.empty():
+                    msg = self.queue.get()
+                    # Todo: Assert its a signal notice or a death warrant
+                    if msg.type == MessageType.DIE:
+                        return (3, "Death warrant received")
+                    return (2, msg.signal)
+                
+                if send_updates:
+                    self._send_update(curbytes, totbytes, speed)
+                
+            return (0, None)
 
     def _download(self, url, target, send_updates = False):
         try:
             # Todo: Assert the domain is self._site
             headers = self._session.head(url, allow_redirects = True).headers
             totbytes = int(headers['content-length']) if 'content-length' in headers else 0
+
             r = self._session.get(url, stream = True, allow_redirects = True)
             if r.status_code != 200: 
                 return (-1, r.status_code)
 
             f = open(target, 'w')
-            curbytes = 0
-            for chunk in r.iter_content(16384):
-                f.write(chunk)
-                curbytes += len(chunk)
 
-                if not self.queue.empty():
-                    msg = self.queue.get()
-                    # Todo: Assert its a signal notice or a death warrant
-                    f.close()
-                    rm(target)
-                    if msg.type == MessageType.DIE:
-                        return (3, "Death warrant received")
-                    return (2, msg.signal)
-                
-                if send_updates:
-                    self._send_update(curbytes, totbytes)
-
+            ret, val = self._get_content(r, f, send_updates, totbytes)
             f.close()
-            return (0, None)
+            if not ret:
+                rm(target)
 
+            return(ret, val)
         except IOError as ioe:
             return (-2, target + ": " + str(ioe))
 

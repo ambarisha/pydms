@@ -61,14 +61,15 @@ def process_message(addr, msgdict):
             return (-2, "Request could not be processed")
 
     elif msgdict['message_type'] == 'update':
-        curbytes = int(msgdict['bytes_received'])
-        totbytes = int(msgdict['total_bytes'])
+        curbytes = msgdict['bytes_received']
+        totbytes = msgdict['total_bytes']
+        speed = str(int(msgdict['speed']))
 
         if totbytes:
             percent = curbytes * 100 / totbytes
-            print "%4s" % str(percent) + ' '.join(["% complete of", str(msgdict['total_bytes']), "bytes"])
+            print "%4s" % str(percent) + ' '.join(["% complete of", str(msgdict['total_bytes']), "bytes at", speed,"bytes/sec"])
         else:
-            print "%10s" % str(curbytes) + ' bytes received. Total size unknown.'
+            print "%10s" % str(curbytes) + ' bytes received at' + speed + ' bytes/sec. Total size unknown.'
 
         return (-3, None)
     return (-1, "Failure")

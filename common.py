@@ -2,6 +2,8 @@ from sys import stderr
 import signal
 
 DMS_UDS_PATH = "dms.uds"
+DEBUG = True
+
 
 sigint = False
 sigsegv = False
@@ -30,4 +32,8 @@ def fatal(msg):
     exit()
 
 def log(msg):
+    if not DEBUG:
+        with open('.dms.log', 'a') as logfile:
+            logfile.write(msg + '\n')
+        return
     stderr.write(msg + '\n')
