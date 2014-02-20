@@ -25,11 +25,11 @@ def profile_decode(dictionary):
     return d
 
 class Job:
-    def __init__(self, addr, url, target, insist = False):
+    def __init__(self, addr, url, target, flags = {'insist':False, 'updates':False}):
         self.url = url
         self.original_url = url
         self.target = target
-        self.insist = insist
+        self.flags = flags
         self.addr = addr
         self.status = False
         self.site = urlparse(url).netloc
@@ -108,12 +108,12 @@ class JobManager:
         self._worker_status[worker] = False
         return worker
 
-    def _assign(self, worker, job = None):
+    def _assign(self, worker, job=None):
         # Todo: Assert worker status == False
         if not job:
             for j in self._jobs:
                 if j.status == False:
-                    if (j.insist == True and j.site == worker.site) or (j.insist == False): 
+                    if (j.flags['insist'] == True and j.site == worker.site) or (j.flags['insist'] == False): 
                         job = j
                         break
             if job == None:
@@ -122,6 +122,7 @@ class JobManager:
         message.url = job.url
         message.target = job.target
         message.client = job.addr
+        message.send_updates = job.flags['updates']
         worker.queue.put(message)
 
         self._assignments[worker] = job
@@ -131,20 +132,21 @@ class JobManager:
         return
 
     def _signoff(self, worker, status):
-        # Todo: Probably its better to log the status
         job = self._assignments[worker]
         self._assignments.pop(worker)
         self._assignments.pop(job)
-        self._worker_status[worker] = False
+        if worker in self._worker_status:
+            self._worker_status[worker] = False
         self._jobs.remove(job)
+        log("Job report: " + job.url + " Worker: " + str(id(worker)) + " Status: " + str(status))
    
     def _dispatch(self, job):
         self._jobs.append(job)
-        if not job.insist:
+        if not job.flags['insist']:
             site = self._pick_site()
             job.update_url(site)
         if job.site in self._workers:
-            if self._workers[job.site] == False:
+            if self._worker_status[self._workers[job.site]] == False:
                 self._assign(self._workers[job.site], job)
         else:
             worker = self._hire(job.site)
@@ -153,16 +155,15 @@ class JobManager:
     def _accept_resignation(self, worker):
         self._worker_status.pop(worker)
         self._threads.pop(worker)
-        self._workers.pop(worker._site)
-        # Todo: Bad. Bad. Accessing private element
-        # Todo: Assert worker is not in self._assignments
+        self._workers.pop(worker.site)
+        worker.queue.put(Message(MessageType.RELEIVE))
 
     def run(self):
         done = False
         while not done:
             msg = self.queue.get()
             if msg.type == MessageType.REQUEST:
-                self._dispatch(Job(msg.addr, msg.url, msg.target, msg.insist)) 
+                self._dispatch(Job(msg.addr, msg.url, msg.target, msg.flags)) 
             elif msg.type == MessageType.JOB_REPORT:
                 self._update(msg.site, msg.speed, msg.filesize)
                 self._signoff(msg.sender, msg.status)

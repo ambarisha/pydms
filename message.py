@@ -7,6 +7,8 @@ class MessageType:
     RESIGNATION = 5
     REQUEST = 6
     DIE = 7
+    UPDATE = 8
+    RELEIVE = 9
 
 class Message:
     def __init__(self, msgtype):

@@ -15,6 +15,7 @@ import common
 from message import *
 
 def cleanup():
+    print "Server: Cleanup requested"
     message = Message(MessageType.DIE)
     job_manager.queue.put(message)
     jm_thread.join()
@@ -37,6 +38,7 @@ def process_request(addr, msgdict, ruds):
         url = msgdict['URL']
         target = msgdict['target']
         insist = msgdict['insist']
+        updates = msgdict['updates']
 
         x = urlparse.urlparse(url)
         if x.scheme == '':
@@ -55,11 +57,12 @@ def process_request(addr, msgdict, ruds):
 
 def dispatch_request(addr, msgdict):
     try:
+        print msgdict
         message = Message(MessageType.REQUEST)
         message.addr = addr
         message.url = msgdict['URL']
         message.target = msgdict['target']
-        message.insist = msgdict['insist']
+        message.flags = { 'insist':msgdict['insist'], 'updates':msgdict['updates'] }
 
         x = urlparse.urlparse(message.url)
         if x.scheme == '':
@@ -72,7 +75,7 @@ def dispatch_request(addr, msgdict):
         return (2, str(ioe) + target)
 
 def process_signal_notice(msgdict):
-    print msgdict
+    #print msgdict
     return (0, "process_signal_notice(): not implemented yet")
 
 # returns (0, None) on success
@@ -94,6 +97,7 @@ def handle_message(addr, msgdict, ruds):
 
 def post_message(message, ruds):
     ret, val = ruds.send_dict(message.msgdict, message.addr)
+    #print message.msgdict, message.addr
     if ret: die("Couldn't send message. " + val)
 
 
