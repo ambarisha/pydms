@@ -56,11 +56,18 @@ def process_message(addr, msgdict):
             return (0, "Finished")
         elif msgdict['response'] == False:
             return (-2, "Request could not be processed")
+
     elif msgdict['message_type'] == 'update':
-        print ("%4s" % str(msgdict['percent'])) + ' '.join(["% complete of", str(msgdict['total_bytes']), "bytes"])
+        curbytes = int(msgdict['bytes_received'])
+        totbytes = int(msgdict['total_bytes'])
+
+        if totbytes:
+            percent = curbytes * 100 / totbytes
+            print "%4s" % str(percent) + ' '.join(["% complete of", str(msgdict['total_bytes']), "bytes"])
+        else:
+            print "%10s" % str(curbytes) + ' bytes received. Total size unknown.'
+
         return (-3, None)
-    print "from:", addr
-    print "message:", msgdict
     return (-1, "Failure")
 
 common.setup_signal_recording()

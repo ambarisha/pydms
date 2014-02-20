@@ -23,7 +23,7 @@ class Worker(object):
         message = Message(MessageType.UPDATE)
         message.msgdict = {}
         message.msgdict['message_type'] = 'update'
-        message.msgdict['percent'] = curbytes * 100 / totbytes
+        message.msgdict['bytes_received'] = curbytes
         message.msgdict['total_bytes'] = totbytes 
         message.addr = self._client
         self._postman.put(message)
@@ -31,9 +31,8 @@ class Worker(object):
     def _download(self, url, target, send_updates = False):
         try:
             # Todo: Assert the domain is self._site
-            # Todo: What if 'content-length' is not available in headers?
             headers = self._session.head(url, allow_redirects = True).headers
-            totbytes = int(headers['content-length'])
+            totbytes = int(headers['content-length']) if 'content-length' in headers else 0
             r = self._session.get(url, stream = True, allow_redirects = True)
             if r.status_code != 200: 
                 return (-1, r.status_code)
