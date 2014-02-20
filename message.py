@@ -9,6 +9,7 @@ class MessageType:
     DIE = 7
     UPDATE = 8
     RELEIVE = 9
+    FINISHED = 10
 
 class Message:
     def __init__(self, msgtype):

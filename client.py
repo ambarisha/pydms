@@ -1,7 +1,10 @@
 from os import remove as rm
+from os.path import exists
+from time import sleep
 from argparse import ArgumentParser
 from random import sample
 from string import lowercase
+from subprocess import Popen as start
 import signal
 
 from rich_unix_domain_sockets import RichUnixDomainSocket
@@ -32,12 +35,12 @@ def send_request(rucs, request):
     request_dict['target'] = request.target
     request_dict['insist'] = request.insist
     request_dict['updates'] = request.updates
+
     err, desc = rucs.send_dict(request_dict)
     if err: return err, desc
-
     err, val = rucs.recv_dict(remote = common.DMS_UDS_PATH, timeout = 10)
     if err: return err, val
-   
+     
     addr, msgdict = val
     if msgdict['message_type'] != 'request_ack':
         return -3, "Request not acknowledged"
@@ -70,6 +73,16 @@ def process_message(addr, msgdict):
         return (-3, None)
     return (-1, "Failure")
 
+def checkup_on_dms():
+    if not exists(common.DMS_UDS_PATH):
+        start(['./server.py'])
+    for i in xrange(30):
+        if exists(common.DMS_UDS_PATH): 
+            return
+        sleep(0.1)
+    fatal("Error: Could not start pydms service. Giving up.")
+
+checkup_on_dms()
 common.setup_signal_recording()
 request = parse_arguments()
 rucs = RichUnixDomainSocket()
@@ -80,6 +93,8 @@ if ret: fatal(desc)
 addr = ''.join(sample(lowercase, 10))
 ret, desc = rucs.bind(addr)
 if ret: die(desc)
+
+checkup_on_dms()
 
 ret, desc = rucs.connect(common.DMS_UDS_PATH)
 if ret: die(desc)

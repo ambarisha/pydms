@@ -138,7 +138,10 @@ class JobManager:
         if worker in self._worker_status:
             self._worker_status[worker] = False
         self._jobs.remove(job)
-        log("Job report: " + job.url + " Worker: " + str(id(worker)) + " Status: " + str(status))
+        if len(self._jobs) == 0:
+            self._postman.put(Message(MessageType.FINISHED))
+        #log("Job report: " + job.url + " Worker: " + str(id(worker)) + " Status: " + str(status))
+        #log("Jobs left: " + str(len(self._jobs)))
    
     def _dispatch(self, job):
         self._jobs.append(job)
@@ -174,7 +177,7 @@ class JobManager:
                 for worker in self._workers:
                     self._workers[worker].queue.put(Message(msg.type))
                 done = True
-                log("JobManager: Recieved death warrant. Turning in.")
+                #log("JobManager: Recieved death warrant. Turning in.")
             elif msg.type == MessageType.RESIGNATION:
                 self._accept_resignation(msg.sender)
             else:

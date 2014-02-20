@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/home/bamboo/pydms/bin/python
 
 import urlparse
 
@@ -15,7 +15,6 @@ import common
 from message import *
 
 def cleanup():
-    print "Server: Cleanup requested"
     message = Message(MessageType.DIE)
     job_manager.queue.put(message)
     jm_thread.join()
@@ -57,7 +56,6 @@ def process_request(addr, msgdict, ruds):
 
 def dispatch_request(addr, msgdict):
     try:
-        print msgdict
         message = Message(MessageType.REQUEST)
         message.addr = addr
         message.url = msgdict['URL']
@@ -75,7 +73,6 @@ def dispatch_request(addr, msgdict):
         return (2, str(ioe) + target)
 
 def process_signal_notice(msgdict):
-    #print msgdict
     return (0, "process_signal_notice(): not implemented yet")
 
 # returns (0, None) on success
@@ -97,7 +94,6 @@ def handle_message(addr, msgdict, ruds):
 
 def post_message(message, ruds):
     ret, val = ruds.send_dict(message.msgdict, message.addr)
-    #print message.msgdict, message.addr
     if ret: die("Couldn't send message. " + val)
 
 
@@ -117,17 +113,29 @@ ret, val = ruds.bind(common.DMS_UDS_PATH)
 if ret: die("ruds.bind() : " + val)
 
 done = False
+waiting = False
+tries = 1000
 while not done:
     error, val = ruds.wait(0.001)
     if error: die(val)
 
     while not postbox.empty():
-        post_message(postbox.get(), ruds)
+        msg = postbox.get()
+        if msg.type == MessageType.SEND_MAIL or msg.type == MessageType.UPDATE:
+            post_message(msg, ruds)
+        elif msg.type == MessageType.FINISHED:
+            waiting = True
 
     if not val:
+        if waiting: 
+            tries -= 1
+            if not tries: break
         continue
 
+    tries = 1000
+    waiting = False
     ret, val = ruds.recv_dict()
     if ret: die("ruds.recv_dict() : " + val)
     ret, val = handle_message(val[0], val[1], ruds)
     if ret: die("handle_message() : " + val)
+cleanup()
