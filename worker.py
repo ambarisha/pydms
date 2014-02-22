@@ -88,7 +88,6 @@ class Worker(object):
         response_mail.msgdict = {'message_type' : 'response',
                                  'response' : True if status == 0 else False}
         response_mail.addr = remote
-        #print "Response Mail: ", response_mail.msgdict, response_mail.addr
         self._postman.put(response_mail)
 
     def _process_queue(self, notice_period=False):

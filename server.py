@@ -56,6 +56,10 @@ def process_request(addr, msgdict, ruds):
     except IOError as ioe:
         return (2, str(ioe) + target)
 
+# returns (0, None) on success
+# returns (-1, errdesc) on failure
+# returns (-2, missing_field) on invalid request
+# returns (-3, IO error message) on IO error opening target file
 def dispatch_request(addr, msgdict):
     try:
         message = Message(MessageType.REQUEST)
@@ -71,17 +75,16 @@ def dispatch_request(addr, msgdict):
         job_manager.queue.put(message)
         return ruds.send_dict({'message_type' : 'request_ack'}, addr)    
     except KeyError as ke:
-        return (1, ke[0])
+        return (-2, ke[0])
     except IOError as ioe:
-        return (2, str(ioe) + target)
+        return (-3, str(ioe) + target)
 
 def process_signal_notice(msgdict):
+    log("process_signal_notice() not implemented yet")
     return (0, "process_signal_notice(): not implemented yet")
 
-# returns (0, None) on success
-# returns (1, missing_key) on KeyError
-# returns (2, message_type) on unrecognized message type
-# returns (-1, desc) on other errors
+# returns what dispatch_request returns
+# returns (-4, message_type) on unknown message type
 def handle_message(addr, msgdict, ruds):
     try:
         msgtype = msgdict['message_type']
@@ -91,14 +94,18 @@ def handle_message(addr, msgdict, ruds):
         elif msgtype == 'signal_notice':
             return process_signal_notice(msgdict)
         else:
-            return (2, msgtype)
+            return (-4, msgtype)
     except KeyError as ke:
-        return (1, ke[0])
+        return (-2, ke[0])
 
+# returns what post_message returns
+# dies on error
 def post_message(message, ruds):
     ret, val = ruds.send_dict(message.msgdict, message.addr)
-    if ret: die("Couldn't send message. " + val)
+    if ret:
+        die("Couldn't send message. " + val)
     log("Postman: To " + message.addr + "; " + str(message.msgdict))
+    return ret, val
 
 common.setup_signal_recording()
 postbox = Queue.Queue()
@@ -110,16 +117,19 @@ jm_thread.start()
 
 ruds = RichUnixDomainSocket()
 ret, val = ruds.init()
-if ret: die("ruds.init() : " + val)
+if ret:
+    die("ruds.init() : " + val)
 
 ret, val = ruds.bind(common.DMS_UDS_PATH)
-if ret: die("ruds.bind() : " + val)
+if ret:
+    die("ruds.bind() : " + val)
 
 waiting = False
 tries = 1000
 while not common.sigint:
     error, val = ruds.wait(0.001)
-    if error: die(val)
+    if error:
+        die(val)
 
     while not postbox.empty():
         msg = postbox.get()
@@ -132,13 +142,18 @@ while not common.sigint:
     if not val:
         if waiting: 
             tries -= 1
-            if not tries: break
+            if not tries:
+                break
         continue
 
     tries = 1000
     waiting = False
+
     ret, val = ruds.recv_dict()
-    if ret: die("ruds.recv_dict() : " + val)
+    if ret:
+        die("ruds.recv_dict() : " + val)
+
     ret, val = handle_message(val[0], val[1], ruds)
-    if ret: die("handle_message() : " + val)
+    if ret: 
+        die("handle_message() : " + val)
 cleanup()

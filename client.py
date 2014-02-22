@@ -12,7 +12,7 @@ import common
 from common import fatal
 
 def cleanup():
-    rucs.close()
+    ruds.close()
     rm(addr)
 
 def die(message):
@@ -28,7 +28,11 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
-def send_request(rucs, request):
+# returns (O, None) on success
+# returns (1, None) on signal interruption
+# returns (2, errdesc) on invalid ack messages
+# returns (-1, errdesc) on other errors
+def send_request(ruds, request):
     request_dict = {} 
     request_dict['message_type'] = 'request'
     request_dict['URL'] = request.url
@@ -36,29 +40,37 @@ def send_request(rucs, request):
     request_dict['insist'] = request.insist
     request_dict['updates'] = request.updates
 
-    err, desc = rucs.send_dict(request_dict)
-    if err: return err, desc
-    err, val = rucs.recv_dict(remote = common.DMS_UDS_PATH, timeout = 10)
-    if err: return err, val
+    err, desc = ruds.send_dict(request_dict)
+    if err:
+        return err, desc
+
+    err, val = ruds.recv_dict(remote = common.DMS_UDS_PATH, timeout = 10)
+    if err:
+        return err, val
      
     addr, msgdict = val
     if msgdict['message_type'] != 'request_ack':
         return -3, "Request not acknowledged"
     return (0, None)
 
+# returns what ruds.send_dict does
 def send_signal_notice(sock):
     request_dict = {}
     request_dict['message_type'] = 'signal_notice'
     request_dict['SIGINT'] = common.sigint
     request_dict['SIGTERM'] = common.sigterm
-    return rucs.send_dict(request_dict)
+    return ruds.send_dict(request_dict)
 
+# returns (0, None) on success response
+# returns (1, None) on an update message
+# returns (-1, message_type) on unknown message type
+# returns (-2, error) on failure response
 def process_message(addr, msgdict):
     if msgdict['message_type'] == 'response':
         if msgdict['response'] == True:
-            return (0, "Finished")
+            return (0, None)
         elif msgdict['response'] == False:
-            return (-2, "Request could not be processed")
+            return (-2, msgdict['error'])
 
     elif msgdict['message_type'] == 'update':
         curbytes = msgdict['bytes_received']
@@ -71,8 +83,8 @@ def process_message(addr, msgdict):
         else:
             print "%10s" % str(curbytes) + ' bytes received at' + speed + ' bytes/sec. Total size unknown.'
 
-        return (-3, None)
-    return (-1, "Failure")
+        return (1, None)
+    return (-1, msgdict['message_type'])
 
 def checkup_on_dms():
     if not exists(common.DMS_UDS_PATH):
@@ -86,39 +98,44 @@ def checkup_on_dms():
 checkup_on_dms()
 common.setup_signal_recording()
 request = parse_arguments()
-rucs = RichUnixDomainSocket()
+ruds = RichUnixDomainSocket()
 
-ret, desc = rucs.init()
-if ret: fatal(desc) 
+ret, desc = ruds.init()
+if ret:
+    fatal(desc) 
 
 addr = ''.join(sample(lowercase, 10))
-ret, desc = rucs.bind(addr)
-if ret: die(desc)
+ret, desc = ruds.bind(addr)
+if ret:
+    die(desc)
 
 checkup_on_dms()
 
-ret, desc = rucs.connect(common.DMS_UDS_PATH)
-if ret: die(desc)
+ret, desc = ruds.connect(common.DMS_UDS_PATH)
+if ret:
+    die(desc)
 
-ret, desc = send_request(rucs, request)
-if ret: die(desc)
+ret, desc = send_request(ruds, request)
+if ret:
+    die(desc)
 
 done = False
 while not done:
-    code, val = rucs.recv_dict(remote = common.DMS_UDS_PATH)
+    code, val = ruds.recv_dict(remote = common.DMS_UDS_PATH)
     if code == 1:
-        ret, desc = send_signal_notice(rucs)
-        if ret: die(desc)
-        die("Received signal, exiting...")
+        ret, desc = send_signal_notice(ruds)
+        if ret:
+            die(desc)
+
     elif code == 2:
-        print "Warning: " + val
+        log("Warning: " + val)
+
     else:
         ret, desc = process_message(val[0], val[1])
-        if ret == -3:
-            continue
-        if not ret:
+        if ret == 0:
             done = True
+        elif ret == -1:
+            log("Client: Unknown message of type '" + desc + "' received")
         elif ret == -2:
-            print "Error: " + desc
-            done = True
+            die("Error: " + desc)
 cleanup()

@@ -4,7 +4,6 @@ from json import loads, dumps
 from os.path import abspath
 from select import select, error as select_error
 
-
 MAX_MSG_LEN = 2048
 
 class RichUnixDomainSocket:
