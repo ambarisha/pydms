@@ -52,7 +52,7 @@ class Worker(object):
                 if send_updates:
                     self._send_update(curbytes, totbytes, speed)
                 
-            return (0, None)
+            return (0, {'speed':speed, 'filesize':totbytes})
 
     def _download(self, url, target, send_updates = False):
         try:
@@ -103,7 +103,7 @@ class Worker(object):
                     self._client = msg.client
                     ret, val = self._download(msg.url, msg.target, msg.send_updates)
                     if ret < 0: fatal(val)
-                    self._finish(ret, 3000000, 1000000, msg.client) # Todo: Temporary
+                    self._finish(ret, val['speed'], val['filesize'], msg.client)
                     if ret == 2 or ret == 3: return False
                 elif msg.type == MessageType.SIGNAL:
                     log("Signal notice received out of context from " + msg.client)
