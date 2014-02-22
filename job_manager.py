@@ -77,7 +77,8 @@ class JobManager:
         self._preferences = []
         for site in self._record:
             readings = [x[1] for x in self._record[site] if x[0] - datetime.now() < self._recent]
-            self._preferences.append((site, sum(readings, 0.0) / len(readings)))
+            if readings:
+                self._preferences.append((site, sum(readings, 0.0) / len(readings)))
         def compare(a, b):
             if a[1] == b[1]:
                 return 0
