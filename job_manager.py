@@ -50,6 +50,7 @@ class JobManager:
         self._threads = {}
         self._assignments = {}
         self._preferences = []
+        self._clients = {}
         self._recent = recent
         self._filename = filename
         ret, val = self._load(self._filename)
@@ -128,6 +129,7 @@ class JobManager:
 
         self._assignments[worker] = job
         self._assignments[job] = worker
+        self._clients[job.addr] = worker
         self._worker_status[worker] = True
         job.status = True
         return
@@ -136,6 +138,7 @@ class JobManager:
         job = self._assignments[worker]
         self._assignments.pop(worker)
         self._assignments.pop(job)
+        self._clients.pop(job.addr)
         if worker in self._worker_status:
             self._worker_status[worker] = False
         self._jobs.remove(job)
@@ -168,11 +171,13 @@ class JobManager:
             if msg.type == MessageType.REQUEST:
                 self._dispatch(Job(msg.addr, msg.url, msg.target, msg.flags)) 
             elif msg.type == MessageType.JOB_REPORT:
-                self._update(msg.site, msg.speed, msg.filesize)
+                if msg.status == 0:
+                    self._update(msg.site, msg.speed, msg.filesize)
                 self._signoff(msg.sender, msg.status)
-                self._assign(msg.sender)
-            elif msg.type == MessageType.SIGNAL:
-                self._workers[msg.addr].queue.put(msg)
+                if msg.status != 3:
+                    self._assign(msg.sender)
+            elif msg.type == MessageType.SIGNAL or msg.type == MessageType.AUTH_RESPONSE:
+                self._clients[msg.addr].queue.put(msg)
             elif msg.type == MessageType.DIE:
                 for worker in self._workers:
                     self._workers[worker].queue.put(Message(msg.type))

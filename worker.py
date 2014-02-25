@@ -21,7 +21,7 @@ class Worker(object):
         self._session = requests.Session()
 
     def _send_update(self, curbytes, totbytes, speed):
-        message = Message(MessageType.UPDATE)
+        message = Message(MessageType.SEND_MAIL)
         message.msgdict = {}
         message.msgdict['message_type'] = 'update'
         message.msgdict['bytes_received'] = curbytes
@@ -45,21 +45,58 @@ class Worker(object):
                 if not self.queue.empty():
                     msg = self.queue.get()
                     # Todo: Assert its a signal notice or a death warrant
-                    if msg.type == MessageType.DIE:
-                        return (3, "Death warrant received")
-                    return (2, msg.signal)
-                
+                    if msg.type == MessageType.SIGNAL:
+                        return (1, "SIGNAL message from client")#msg.signal)
+                    elif msg.type == MessageType.DIE:
+                        return (2, "Death warrant received")
                 if send_updates:
                     self._send_update(curbytes, totbytes, speed)
                 
             return (0, {'speed':speed, 'filesize':totbytes})
 
+    def _get_credentials(self):
+        message = Message(MessageType.SEND_MAIL)
+        message.msgdict = {}
+        message.msgdict['message_type'] = 'auth_request'
+        message.addr = self._client
+        self._postman.put(message)
+        
+        try:
+            response = self.queue.get(True, timeout=1)
+            if response.type != MessageType.AUTH_RESPONSE:
+                log("Worker: Invalid message received. MessageType: " + str(response.type))
+                return None
+            return response.credentials
+        except Queue.Empty:
+            return None
+
+    # returns (0, {'speed', 'filesize'}) on success
+    # returns (-3, errdesc) if auth creds not received from client
+    # returns (-4, errdesc) if auth failed after 3 retries
+    # returns (-2, errdesc) on IOError wrt `target`
+    # returns (-1, errdesc) if request returned other than 200 status
+    # returns (1, signal number) on signal message from client
+    # returns (2, errdesc) on DIE message interruption
     def _download(self, url, target, send_updates = False):
         try:
             # Todo: Assert the domain is self._site
-            headers = self._session.head(url, allow_redirects = True).headers
-            totbytes = int(headers['content-length']) if 'content-length' in headers else 0
+            response = self._session.head(url, allow_redirects = True)
+            tries = 3
+            # Todo: Recheck if 401 status is returned when an auth fails
+            while response.status_code == 401 and tries:
+                credentials = self._get_credentials()
+                if not credentials:
+                    return (-3, "Couldn't get authentication credentials for client")
+                response = self._session.head(url, allow_redirects=True, auth=HTTPBasicAuth(credentials))
+                if response.status_code == 401:
+                    tries -= 1
+                    continue
+            if not tries:
+                return (-4, "Authentication failed")
 
+            totbytes = int(response.headers['content-length']) if 'content-length' in response.headers else 0
+
+            # Todo: What if server doesn't allow cookies and authentication is needed?
             r = self._session.get(url, stream = True, allow_redirects = True)
             if r.status_code != 200: 
                 return (-1, r.status_code)
@@ -75,18 +112,32 @@ class Worker(object):
         except IOError as ioe:
             return (-2, target + ": " + str(ioe))
 
-    def _finish(self, status, speed, filesize, remote):
+    def _finish(self, status, remote, speed=None, filesize=None):
         report = Message(MessageType.JOB_REPORT)
         report.status = status 
         report.sender = self
-        report.filesize = filesize
-        report.speed = speed
         report.site = self._site
+        if status == 0:
+            report.filesize = filesize
+            report.speed = speed
         self._employer.put(report)
 
         response_mail = Message(MessageType.SEND_MAIL)
         response_mail.msgdict = {'message_type' : 'response',
                                  'response' : True if status == 0 else False}
+        if status == -1:
+            response_mail.msgdict['error'] = "HTTP request failed"
+        elif status == -2:
+            response_mail.msgdict['error'] = "Couldn't not open local target file for writing"
+        elif status == -3:
+            response_mail.msgdict['error'] = "Authentication credentials not received"
+        elif status == -4:
+            response_mail.msgdict['error'] = "Authentication failed"
+        elif status == 1:
+            response_mail.msgdict['error'] = "Interrupted by signal"
+        elif status == 2:
+            response_mail.msgdict['error'] = "DMS exited unexpectedly"
+
         response_mail.addr = remote
         self._postman.put(response_mail)
 
@@ -101,25 +152,28 @@ class Worker(object):
                 if msg.type == MessageType.NEW_JOB:
                     self._client = msg.client
                     ret, val = self._download(msg.url, msg.target, msg.send_updates)
-                    if ret < 0: fatal(val)
-                    self._finish(ret, val['speed'], val['filesize'], msg.client)
-                    if ret == 2 or ret == 3: return False
+
+                    if ret == 0:
+                        self._finish(ret, msg.client, speed=val['speed'], filesize=val['filesize'])
+                    else:
+                        self._finish(ret, msg.client)
                 elif msg.type == MessageType.SIGNAL:
-                    log("Signal notice received out of context from " + msg.client)
+                    log("Worker: Signal notice received out of context from " + msg.client)
                 elif msg.type == MessageType.DIE:
                     return True
                 elif msg.type == MessageType.RELEIVE:
                     return False
                 else:
-                    log("Invalid message received")
+                    log("Worker: Invalid message received")
             except Queue.Empty as e:
                 break
             except Exception as e:
-                print e
+                print "Worker:", e
     
     def run(self):
         done = self._process_queue()
-        if done: return 
+        if done:
+            return 
 
         resignation = Message(MessageType.RESIGNATION)
         resignation.sender = self

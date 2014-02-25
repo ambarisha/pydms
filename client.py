@@ -84,6 +84,12 @@ def process_message(addr, msgdict):
             print "%10s" % str(curbytes) + ' bytes received at' + speed + ' bytes/sec. Total size unknown.'
 
         return (1, None)
+    elif msgdict['message_type'] == 'auth_request':
+        username = raw_input('Username: ')
+        password = raw_input('Password[You\'ll see the characters. Yew, I know]: ')
+        message = {'message_type' : 'auth_response', 'credentials' : (username, password)}
+        ruds.send_dict(message)
+
     return (-1, msgdict['message_type'])
 
 def checkup_on_dms():

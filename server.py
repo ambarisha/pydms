@@ -79,9 +79,16 @@ def dispatch_request(addr, msgdict):
     except IOError as ioe:
         return (-3, str(ioe) + target)
 
-def process_signal_notice(msgdict):
-    log("process_signal_notice() not implemented yet")
-    return (0, "process_signal_notice(): not implemented yet")
+def deliver_mail(msgdict, client):
+    if msgdict['message_type'] == 'signal_notice':
+        message = Message(MessageType.SIGNAL)
+    elif msgdict['message_type'] == 'auth_response':
+        message = Message(MessageType.AUTH_RESPONSE)
+        message.credentials = (msgdict['username'], msgdict['password'])
+
+    message.addr = client
+    job_manager.queue.put(message)
+    return (0, None)
 
 # returns what dispatch_request returns
 # returns (-4, message_type) on unknown message type
@@ -91,8 +98,8 @@ def handle_message(addr, msgdict, ruds):
         if msgtype == 'request':
             #return process_request(addr, msgdict, ruds)
             return dispatch_request(addr, msgdict)
-        elif msgtype == 'signal_notice':
-            return process_signal_notice(msgdict)
+        elif msgtype == 'signal_notice' or msgtype =='auth_resp':
+            return deliver_mail(msgdict, addr)
         else:
             return (-4, msgtype)
     except KeyError as ke:
@@ -133,7 +140,7 @@ while not common.sigint:
 
     while not postbox.empty():
         msg = postbox.get()
-        if msg.type == MessageType.SEND_MAIL or msg.type == MessageType.UPDATE:
+        if msg.type == MessageType.SEND_MAIL:
             post_message(msg, ruds)
         elif msg.type == MessageType.FINISHED:
             waiting = True
